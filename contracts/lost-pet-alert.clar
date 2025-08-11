@@ -26,8 +26,7 @@
                                    (photo-hash (string-ascii 64))
                                    (lat int)
                                    (lon int))
-  (let ((pet-id (var-get next-pet-id))
-        (current-height block-height))
+  (let ((pet-id (var-get next-pet-id)))
     (map-set pets pet-id {
       owner: tx-sender,
       name: name,
@@ -36,8 +35,8 @@
       status: "missing",
       last-seen-lat: lat,
       last-seen-lon: lon,
-      created-at: current-height,
-      updated-at: current-height
+      created-at: u0,
+      updated-at: u0
     })
     (var-set next-pet-id (+ pet-id u1))
     (map-set pet-owner-ids tx-sender
@@ -51,7 +50,7 @@
     (asserts! (is-eq tx-sender (get owner pet-data)) ERR-UNAUTHORIZED)
     (map-set pets pet-id (merge pet-data {
       status: new-status,
-      updated-at: block-height
+      updated-at: u0
     }))
     (ok true)))
 
@@ -61,7 +60,7 @@
     (map-set pets pet-id (merge pet-data {
       last-seen-lat: lat,
       last-seen-lon: lon,
-      updated-at: block-height
+      updated-at: u0
     }))
     (ok true)))
 
@@ -75,62 +74,3 @@
   (match (map-get? pets pet-id)
     pet-data (is-eq owner (get owner pet-data))
     false))
-
-;; contracts/sighting-reports.clar
-(define-constant ERR-NOT-FOUND (err u404))
-(define-constant ERR-UNAUTHORIZED (err u401))
-
-(define-data-var next-sighting-id uint u1)
-
-(define-map sightings
-  uint
-  {
-    reporter: principal,
-    pet-id: uint,
-    lat: int,
-    lon: int,
-    description: (string-ascii 500),
-    photo-hash: (optional (string-ascii 64)),
-    created-at: uint,
-    verified: bool
-  })
-
-(define-map pet-sightings uint (list 50 uint))
-
-(define-public (report-sighting (pet-id uint)
-                               (lat int)
-                               (lon int)
-                               (description (string-ascii 500))
-                               (photo-hash (optional (string-ascii 64))))
-  (let ((sighting-id (var-get next-sighting-id))
-        (current-height block-height))
-    (map-set sightings sighting-id {
-      reporter: tx-sender,
-      pet-id: pet-id,
-      lat: lat,
-      lon: lon,
-      description: description,
-      photo-hash: photo-hash,
-      created-at: current-height,
-      verified: false
-    })
-    (var-set next-sighting-id (+ sighting-id u1))
-    (map-set pet-sightings pet-id
-      (unwrap-panic (as-max-len?
-        (append (default-to (list) (map-get? pet-sightings pet-id)) sighting-id)
-        u50)))
-    (ok sighting-id)))
-
-(define-public (verify-sighting (sighting-id uint) (pet-id uint))
-  (let ((sighting-data (unwrap! (map-get? sightings sighting-id) ERR-NOT-FOUND)))
-    (asserts! (contract-call? .pet-registry is-pet-owner pet-id tx-sender) ERR-UNAUTHORIZED)
-    (map-set sightings sighting-id (merge sighting-data {
-      verified: true
-    }))
-    (ok true)))
-
-(define-read-only (get-sighting (sighting-id uint))
-  (map-get? sightings sighting-id))
-
-(define-read-only (get-pet-sightings (pet-id uint))
-  (map-get? pet-sightings pet-id))
